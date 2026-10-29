@@ -56,7 +56,7 @@ export class UserModel extends Model {
   Phone_Number: string;
 
   @Column({
-    type: DataType.INTEGER,
+    type: DataType.BIGINT,
     allowNull: true,
     field: 'WhatsApp_Id',
   })

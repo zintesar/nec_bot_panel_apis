@@ -11,7 +11,7 @@ export class AuthService {
     private readonly jwtService: JwtService,
     @Inject(USER_REPOSITORY) private readonly userRepository: typeof UserModel,
     @Inject(REDIS_CONNECTION) private readonly redisClient: any,
-  ) {}
+  ) { }
 
   // ─── Helpers ──────────────────────────────────────────────────────────────
 
@@ -39,38 +39,40 @@ export class AuthService {
   // ─── Token Generation ──────────────────────────────────────────────────────
 
   async generateAccessToken(user: any): Promise<{ token: string; expiresAt: Date }> {
+    const userId = user.id || user.Id || user.user_id;
     const jti = this.generateJti();
     const expiration = process.env.TOKEN_EXPIRATION || '1h';
     const ttlSeconds = this.parseDurationToSeconds(expiration);
 
-    const payload = { ...user, user_id: user.id, jti };
+    const payload = { ...user, id: userId, user_id: userId, jti };
 
     const token = await this.jwtService.signAsync(payload, {
       secret: process.env.JWTKEY,
       expiresIn: expiration,
     });
 
-    const redisKey = `app_auth:${user.id}:token:${jti}`;
-    await this.redisClient.setEx(redisKey, ttlSeconds, JSON.stringify(user));
+    const redisKey = `app_auth:${userId}:token:${jti}`;
+    await this.redisClient.setEx(redisKey, ttlSeconds, JSON.stringify(payload));
 
     const expiresAt = new Date(Date.now() + ttlSeconds * 1000);
     return { token, expiresAt };
   }
 
   async generateRefreshToken(user: any): Promise<{ token: string; expiresAt: Date }> {
+    const userId = user.id || user.Id || user.user_id;
     const jti = this.generateJti();
     const expiration = process.env.REFRESH_TOKEN_EXPIRATION || '30d';
     const ttlSeconds = this.parseDurationToSeconds(expiration);
 
-    const payload = { ...user, user_id: user.id, jti };
+    const payload = { ...user, id: userId, user_id: userId, jti };
 
     const token = await this.jwtService.signAsync(payload, {
       secret: process.env.REFRESH_KEY,
       expiresIn: expiration,
     });
 
-    const redisKey = `app_auth:${user.id}:refreshToken:${jti}`;
-    await this.redisClient.setEx(redisKey, ttlSeconds, JSON.stringify(user));
+    const redisKey = `app_auth:${userId}:refreshToken:${jti}`;
+    await this.redisClient.setEx(redisKey, ttlSeconds, JSON.stringify(payload));
 
     const expiresAt = new Date(Date.now() + ttlSeconds * 1000);
     return { token, expiresAt };
@@ -101,25 +103,40 @@ export class AuthService {
   // ─── Auth Flow ─────────────────────────────────────────────────────────────
 
   async validateUser(username: string, password: string) {
-    const user = await (this.userRepository as any).findOne({ where: { email: username } });
+    let user = await (this.userRepository as any).findOne({ where: { Name: username } });
+    if (!user) {
+      user = await (this.userRepository as any).findOne({ where: { Email: username } });
+    }
 
     if (!user) {
       return null;
     }
 
-    const isPasswordValid = await bcrypt.compare(password, user.password);
+    const hashedPassword = user.Password || user.password;
+    if (!hashedPassword) {
+      return null;
+    }
+
+    const isPasswordValid = await bcrypt.compare(password, hashedPassword);
     if (!isPasswordValid) {
       return null;
     }
 
     // Return a plain object without the password
-    const { password: _pw, ...result } = user.get({ plain: true });
-    return result;
+    const plainUser = user.get({ plain: true });
+    const { password: _pw, Password: _pw2, ...result } = plainUser;
+    const userId = plainUser.id || plainUser.Id;
+    return {
+      ...result,
+      id: userId,
+      user_id: userId,
+    };
   }
 
   public async login(user: any) {
+    const userId = user.id || user.Id || user.user_id;
     // Purge existing sessions first
-    await this.deleteAllUserSessions(user.id);
+    await this.deleteAllUserSessions(userId);
 
     // Issue both tokens in parallel
     const [accessTokenData, refreshTokenData] = await Promise.all([
@@ -146,20 +163,30 @@ export class AuthService {
   }
 
   public async register(register: any) {
-    const { name, username, email, password } = register;
+    const { name, username, email, password, user_type } = register;
     const existing = await (this.userRepository as any).findOne({
-      where: { email },
-    });
+      where: { Email: email },
+    }, { logging: console.log });
     if (existing) {
       throw new UnauthorizedException('User already exists');
     }
     const hashedPassword = await this.hashPassword(password);
-    const newUser = await (this.userRepository as any).create({
-      name,
-      email,
-      password: hashedPassword,
-    });
-    const { password: _pw, ...result } = newUser.get({ plain: true });
-    return result;
+
+    const entry_data = {
+      Name: username,
+      Password: hashedPassword,
+      Email: email,
+      User_Type: user_type,
+    };
+
+    const newUser = await this.userRepository.create(entry_data, { logging: console.log });
+    const plainUser = newUser.get({ plain: true });
+    const { password: _pw, Password: _pw2, ...result } = plainUser;
+    const userId = plainUser.id || plainUser.Id;
+    return {
+      ...result,
+      id: userId,
+      user_id: userId,
+    };
   }
 }

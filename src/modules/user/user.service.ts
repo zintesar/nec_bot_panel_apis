@@ -1,8 +1,9 @@
 import { Injectable, Inject } from '@nestjs/common';
-import { UserModel } from '../../models';
+import { ChatActivityModel, UserModel } from '../../models';
 import { UserDto } from '../../dto';
 import {
   USER_REPOSITORY,
+  CHAT_ACTIVITY_REPOSITORY,
   DATABASE_CONNECTION,
   REDIS_CONNECTION,
 } from '../../config/constants';
@@ -12,6 +13,7 @@ import { Sequelize } from 'sequelize-typescript';
 export class UserService {
   constructor(
     @Inject(USER_REPOSITORY) private readonly userRepository: typeof UserModel,
+    @Inject(CHAT_ACTIVITY_REPOSITORY) private readonly chatActivityRepository: typeof ChatActivityModel,
     @Inject(DATABASE_CONNECTION) private DB: Sequelize,
     @Inject(REDIS_CONNECTION) private redisClient: any,
   ) { }
@@ -38,6 +40,22 @@ export class UserService {
     const result = await this.userRepository.destroy<UserModel>({ where: { id } });
     console.log('result', result)
     return 'user deleted';
+  }
+
+  async findAllActivity(): Promise<UserModel[]> {
+    const result = await this.userRepository.findAll({
+      attributes: ['id', 'name', 'email'],
+      where: {
+        User_Type: 'agent',
+      },
+      include: [
+        {
+          model: ChatActivityModel,
+          as: 'chatActivities',
+        },
+      ],
+    });
+    return result;
   }
 
 

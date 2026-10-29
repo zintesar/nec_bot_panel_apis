@@ -17,6 +17,7 @@ import { UserModule } from './modules/user/user.module';
 import { RedisModule } from './config/redis/redis.module';
 import { UserTypeModule } from './modules/user-type/user-type.module';
 import { ChatActivityModule } from './modules/chat-activity/chat-activity.module';
+import { DashboardModule } from './modules/dashboard/dashboard.module';
 
 @Module({
   imports: [
@@ -30,6 +31,7 @@ import { ChatActivityModule } from './modules/chat-activity/chat-activity.module
     UserModule,
     UserTypeModule,
     ChatActivityModule,
+    DashboardModule,
   ],
   controllers: [],
   providers: [...interceptorProviders],
