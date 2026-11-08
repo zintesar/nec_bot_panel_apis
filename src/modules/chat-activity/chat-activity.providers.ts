@@ -1,5 +1,5 @@
-import { ChatActivityModel, ChatModel, UserModel } from '@models/index';
-import { CHAT_ACTIVITY_REPOSITORY, CHAT_REPOSITORY, USER_REPOSITORY } from '@config/constants';
+import { ChatActivityModel, ChatModel, CustomerModel, UserModel } from '@models/index';
+import { CHAT_ACTIVITY_REPOSITORY, CHAT_REPOSITORY, CUSTOMER_REPOSITORY, USER_REPOSITORY } from '@config/constants';
 
 export const chatActivityProviders = [
   {
@@ -13,5 +13,9 @@ export const chatActivityProviders = [
   {
     provide: USER_REPOSITORY,
     useValue: UserModel,
+  },
+  {
+    provide: CUSTOMER_REPOSITORY,
+    useValue: CustomerModel,
   }
 ];

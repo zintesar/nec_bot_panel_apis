@@ -31,6 +31,11 @@ export class UserController {
     return await this.userService.findOneById(id);
   }
 
+  @Get('/activity')
+  async userActivity() {
+    return await this.userService.findAllActivity();
+  }
+
 
 
   // @Post('/findbyemail')

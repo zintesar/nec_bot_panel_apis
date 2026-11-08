@@ -28,6 +28,20 @@ export class ChatModel extends Model {
   Activity_Id: string;
 
   @Column({
+    type: DataType.STRING(50),
+    allowNull: true,
+    field: 'From',
+  })
+  From: string;
+
+  @Column({
+    type: DataType.STRING(50),
+    allowNull: true,
+    field: 'To',
+  })
+  To: string;
+
+  @Column({
     type: DataType.DATE,
     allowNull: true,
     field: 'Timestamp',

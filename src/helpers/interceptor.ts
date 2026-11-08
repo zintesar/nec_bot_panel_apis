@@ -14,6 +14,7 @@ import {
   Catch,
   ArgumentsHost,
   Logger,
+  ForbiddenException,
 } from '@nestjs/common';
 import { Observable, throwError, TimeoutError, of } from 'rxjs';
 import { tap, catchError, map, timeout } from 'rxjs/operators';
@@ -25,6 +26,7 @@ import {
   NOT_FOUND,
   UNAUTHORIZED,
   BAD_REQUEST,
+  FORBIDDEN,
 } from './responseHelper';
 import { Request, Response } from 'express';
 
@@ -61,7 +63,7 @@ export class ErrorsInterceptor implements NestInterceptor {
                 (item2) => req.i18n.__(item2) || item2,
               );
             });
-          } catch (e) {}
+          } catch (e) { }
 
           return throwError(
             new UnprocessableEntityException(
@@ -94,7 +96,18 @@ export class ErrorsInterceptor implements NestInterceptor {
               ),
             ),
           );
-        } else {
+        } else if (err instanceof ForbiddenException) {
+          return throwError(
+            new ForbiddenException(
+              FORBIDDEN(
+                error.response ? error.response.message : null,
+                error.response ? error.response.message : null,
+                req,
+              ),
+            ),
+          );
+        }
+        else {
           console.log('error  ', error);
           return throwError(
             new InternalServerErrorException(INTERNAL_SERVER_ERROR(null, req)),

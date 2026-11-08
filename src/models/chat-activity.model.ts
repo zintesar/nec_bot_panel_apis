@@ -8,6 +8,7 @@ import {
 } from 'sequelize-typescript';
 import { ChatModel } from './chat.model';
 import { UserModel } from './user.model';
+import { CustomerModel } from './customer.model';
 
 export enum ChatActivityStatus {
   WAITING = 0,
@@ -75,12 +76,12 @@ export class ChatActivityModel extends Model {
   })
   chats: ChatModel[];
 
-  @HasOne(() => UserModel, {
+  @HasOne(() => CustomerModel, {
     sourceKey: 'Customer_Id',
     foreignKey: 'Id',
     as: 'customer'
   })
-  customer: UserModel;
+  customer: CustomerModel;
 
   @HasOne(() => UserModel, {
     sourceKey: 'Agent_Id',

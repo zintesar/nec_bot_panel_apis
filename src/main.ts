@@ -19,7 +19,7 @@ async function bootstrap() {
     passphrase: 'Mlajan@123##',
   };
 
-  const NestFactoryOptions = { logger: nestwinstonLog };
+  const NestFactoryOptions = { logger: nestwinstonLog, rawBody: true };
 
   if (process.env.SSL == 'true') {
     //enable ssl..

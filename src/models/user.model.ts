@@ -61,4 +61,11 @@ export class UserModel extends Model {
     field: 'WhatsApp_Id',
   })
   WhatsApp_Id: number;
+
+  @Column({
+    type: DataType.STRING(20),
+    allowNull: true,
+    field: 'User_Id',
+  })
+  User_Id: string;
 }

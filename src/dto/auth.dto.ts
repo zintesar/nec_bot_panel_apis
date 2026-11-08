@@ -74,3 +74,21 @@ export class RegisterAuthDto {
   })
   readonly user_type: UserType;
 }
+
+export class AssignAgentDto {
+  @ApiProperty({
+    description: 'Chat activity ID',
+    example: '123e4567-e89b-12d3-a456-426614174000',
+  })
+  @IsNotEmpty()
+  @IsString()
+  readonly chat_activity_id: string;
+
+  @ApiProperty({
+    description: 'Agent ID',
+    example: '123e4567-e89b-12d3-a456-426614174000',
+  })
+  @IsNotEmpty()
+  @IsString()
+  readonly agent_id: string;
+}

@@ -39,6 +39,19 @@ export const UNAUTHORIZED = (message, req) => {
   return response;
 };
 
+//403
+export const FORBIDDEN = (message, payload, req) => {
+  const response = {
+    issuccess: false,
+    statusCode: 403,
+    errors: payload || null,
+    message: message || req.i18n.__('forbidden'),
+  };
+
+  responseBodyLog(response);
+  return response;
+};
+
 //404
 export const NOT_FOUND = (message, req) => {
   const response = {

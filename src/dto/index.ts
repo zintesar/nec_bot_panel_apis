@@ -1,4 +1,5 @@
 export * from './auth.dto';
 export * from './user.dto';
 export * from './incomingMessage.dto';
+export * from './sendWhatsAppMessage.dto';
 

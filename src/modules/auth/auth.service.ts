@@ -1,6 +1,7 @@
 import { Inject, Injectable, UnauthorizedException } from '@nestjs/common';
 import * as bcrypt from 'bcryptjs';
 import { JwtService } from '@nestjs/jwt';
+import { Op } from 'sequelize';
 import { UserModel } from '@models/index';
 import { USER_REPOSITORY } from '@config/constants';
 import { REDIS_CONNECTION } from '@config/constants';
@@ -145,6 +146,7 @@ export class AuthService {
     ]);
 
     return {
+      user: user,
       access_token: accessTokenData.token,
       access_token_expires: accessTokenData.expiresAt,
       refresh_token: refreshTokenData.token,
@@ -172,21 +174,54 @@ export class AuthService {
     }
     const hashedPassword = await this.hashPassword(password);
 
+    //generate user id
+    const roleType = (user_type || '').toLowerCase() === 'admin' ? 'ADMIN' : 'AGENT';
+    const prefix = `NEC-${roleType}-`;
+
+    const lastUser = await (this.userRepository as any).findOne({
+      where: {
+        User_Id: {
+          [Op.like]: `${prefix}%`,
+        },
+      },
+      order: [['User_Id', 'DESC']],
+    });
+
+    let nextNumber = 1;
+    if (lastUser?.User_Id) {
+      const match = lastUser.User_Id.match(new RegExp(`^${prefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(\\d+)`));
+      if (match && match[1]) {
+        nextNumber = parseInt(match[1], 10) + 1;
+      }
+    }
+    const generatedUserId = `${prefix}${String(nextNumber).padStart(3, '0')}`;
+
     const entry_data = {
       Name: username,
       Password: hashedPassword,
       Email: email,
       User_Type: user_type,
+      User_Id: generatedUserId,
     };
+    console.log("🚀 ~ AuthService ~ register ~ entry_data:", entry_data)
 
     const newUser = await this.userRepository.create(entry_data, { logging: console.log });
+    console.log("🚀 ~ AuthService ~ register ~ newUser:", newUser)
     const plainUser = newUser.get({ plain: true });
     const { password: _pw, Password: _pw2, ...result } = plainUser;
     const userId = plainUser.id || plainUser.Id;
-    return {
+    const userData = {
       ...result,
       id: userId,
       user_id: userId,
+    };
+
+    const tokens = await this.login(userData);
+
+    return {
+      ...userData,
+      token: tokens.access_token,
+      ...tokens,
     };
   }
 }
