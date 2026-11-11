@@ -1,7 +1,8 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { ChatActivityService } from './chat-activity.service';
-import { CHAT_ACTIVITY_REPOSITORY, CHAT_REPOSITORY, USER_REPOSITORY } from '@config/constants';
+import { ChatBotService } from './chat-bot.service';
+import { CHAT_ACTIVITY_REPOSITORY, CHAT_REPOSITORY, CUSTOMER_REPOSITORY, USER_REPOSITORY } from '@config/constants';
 import axios from 'axios';
 
 jest.mock('axios');
@@ -25,10 +26,22 @@ describe('ChatActivityService - sendWhatsAppTextMessage', () => {
   const mockChatActivityRepo = {
     findOne: jest.fn(),
     create: jest.fn(),
+    findAll: jest.fn(),
+    count: jest.fn(),
   };
 
   const mockChatRepo = {
     create: jest.fn(),
+    findAll: jest.fn(),
+  };
+
+  const mockCustomerRepo = {
+    findOne: jest.fn(),
+    create: jest.fn(),
+  };
+
+  const mockChatBotService = {
+    callBotApi: jest.fn(),
   };
 
   beforeEach(async () => {
@@ -50,6 +63,14 @@ describe('ChatActivityService - sendWhatsAppTextMessage', () => {
         {
           provide: CHAT_REPOSITORY,
           useValue: mockChatRepo,
+        },
+        {
+          provide: CUSTOMER_REPOSITORY,
+          useValue: mockCustomerRepo,
+        },
+        {
+          provide: ChatBotService,
+          useValue: mockChatBotService,
         },
       ],
     }).compile();
@@ -144,5 +165,207 @@ describe('ChatActivityService - sendWhatsAppTextMessage', () => {
         Type: 'text',
       }),
     );
+  });
+
+  it('should successfully send message when customer exists in customerRepository', async () => {
+    mockUserRepo.findOne.mockResolvedValue(null);
+    const mockCustomer = {
+      Id: 'cust-uuid-1',
+      Name: 'Jane Customer',
+      Phone_Number: '8801700000000',
+      WhatsApp_Id: 8801700000000,
+    };
+    mockCustomerRepo.findOne.mockResolvedValue(mockCustomer);
+    mockChatActivityRepo.findOne.mockResolvedValue({
+      Activity_Id: 'act-uuid-1',
+      Customer_Id: 'cust-uuid-1',
+    });
+    mockChatRepo.create.mockResolvedValue({ Id: 'chat-uuid-2' });
+
+    mockedAxios.post.mockResolvedValue({
+      data: {
+        messaging_product: 'whatsapp',
+        contacts: [{ input: '8801700000000', wa_id: '8801700000000' }],
+        messages: [{ id: 'wamid.CUST...' }],
+      },
+    } as any);
+
+    const result = await service.sendWhatsAppTextMessage({
+      whatsapp_number: '8801700000000',
+      text: 'Hello from customer lookup',
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.data.recipient.userId).toBe('cust-uuid-1');
+  });
+
+  describe('processWhatsAppTextMessage', () => {
+    it('should take incoming text, call bot API, extract answer, and send to WhatsApp', async () => {
+      const mockCustomer = {
+        Id: 'cust-uuid-123',
+        Name: 'Alice',
+        Phone_Number: '8801812345678',
+        WhatsApp_Id: 8801812345678,
+      };
+      mockCustomerRepo.findOne.mockResolvedValue(mockCustomer);
+      mockChatActivityRepo.findOne.mockResolvedValue({
+        Activity_Id: 'session-activity-999',
+        Customer_Id: 'cust-uuid-123',
+        Status: 0,
+        save: jest.fn().mockResolvedValue(true),
+      });
+      mockChatRepo.create.mockResolvedValue({ Id: 'chat-entry-1' });
+
+      // Mock bot API reply
+      const mockBotReply = {
+        success: true,
+        answer: 'Hello Alice, how can I help you today?',
+        confidence: 95,
+        session_id: 'session-activity-999',
+      };
+      mockChatBotService.callBotApi.mockResolvedValue(mockBotReply);
+
+      // Spy on sendWhatsAppTextMessage
+      const sendSpy = jest.spyOn(service, 'sendWhatsAppTextMessage').mockResolvedValue({
+        success: true,
+        messageId: 'wamid.OUTBOUND123',
+      } as any);
+
+      const incomingMsg = {
+        sender: '8801812345678',
+        body: 'Hello',
+        messageId: 'wamid.INCOMING123',
+        timestamp: '1700000000',
+        type: 'text',
+        name: 'Alice',
+      };
+
+      const result = await service.processWhatsAppTextMessage(incomingMsg);
+
+      // Verify incoming chat was saved
+      expect(mockChatRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          Activity_Id: 'session-activity-999',
+          Content: 'Hello',
+          Message_Id: 'wamid.INCOMING123',
+        }),
+      );
+
+      // Verify bot API was called with text and session_id
+      expect(mockChatBotService.callBotApi).toHaveBeenCalledWith({
+        message: 'Hello',
+        session_id: 'session-activity-999',
+        language: 'en',
+      });
+
+      // Verify sendWhatsAppTextMessage was dispatched with bot answer
+      expect(sendSpy).toHaveBeenCalledWith({
+        whatsapp_number: '8801812345678',
+        text: 'Hello Alice, how can I help you today?',
+        chat_activity_id: 'session-activity-999',
+      });
+
+      expect(result.botResponse).toEqual(mockBotReply);
+    });
+
+    it('should ignore message echoes and not trigger bot or outbound send', async () => {
+      mockCustomerRepo.findOne.mockResolvedValue({ Id: 'cust-1' });
+      mockChatActivityRepo.findOne.mockResolvedValue({ Activity_Id: 'act-1' });
+      mockChatRepo.create.mockResolvedValue({ Id: 'echo-entry-1' });
+
+      const sendSpy = jest.spyOn(service, 'sendWhatsAppTextMessage');
+
+      const echoMsg = {
+        sender: '8801812345678',
+        body: 'Echo text from business',
+        messageId: 'wamid.ECHO123',
+        timestamp: '1700000000',
+        type: 'text',
+        isEcho: true,
+      };
+
+      const result = await service.processWhatsAppTextMessage(echoMsg);
+
+      expect(mockChatBotService.callBotApi).not.toHaveBeenCalled();
+      expect(sendSpy).not.toHaveBeenCalled();
+      expect(result.incomingChat).toBeDefined();
+    });
+
+    it('should not dispatch WhatsApp message if bot returns no answer', async () => {
+      mockCustomerRepo.findOne.mockResolvedValue({ Id: 'cust-1' });
+      mockChatActivityRepo.findOne.mockResolvedValue({ Activity_Id: 'act-1', save: jest.fn() });
+      mockChatRepo.create.mockResolvedValue({ Id: 'chat-1' });
+
+      mockChatBotService.callBotApi.mockResolvedValue({
+        success: false,
+        answer: null,
+      });
+
+      const sendSpy = jest.spyOn(service, 'sendWhatsAppTextMessage');
+
+      const incomingMsg = {
+        sender: '8801812345678',
+        body: 'Unknown query',
+        messageId: 'wamid.IN123',
+        timestamp: '1700000000',
+        type: 'text',
+      };
+
+      await service.processWhatsAppTextMessage(incomingMsg);
+
+      expect(mockChatBotService.callBotApi).toHaveBeenCalled();
+      expect(sendSpy).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('getChatList', () => {
+    it('should return paginated activities with only the last 1 chat for each activity', async () => {
+      const mockActivities = [
+        {
+          Activity_Id: 'act-101',
+          Customer_Id: 'cust-1',
+          Status: 0,
+          toJSON: () => ({ Activity_Id: 'act-101', Customer_Id: 'cust-1', Status: 0 }),
+        },
+        {
+          Activity_Id: 'act-102',
+          Customer_Id: 'cust-2',
+          Status: 2,
+          toJSON: () => ({ Activity_Id: 'act-102', Customer_Id: 'cust-2', Status: 2 }),
+        },
+      ];
+
+      mockChatActivityRepo.findAll = jest.fn().mockResolvedValue(mockActivities);
+      mockChatActivityRepo.count = jest.fn().mockResolvedValue(2);
+
+      const mockChats = [
+        { Id: 'chat-newest-1', Activity_Id: 'act-101', Content: 'Latest message for act 101', Timestamp: new Date('2026-11-11T12:00:00Z') },
+        { Id: 'chat-older-1', Activity_Id: 'act-101', Content: 'Older message for act 101', Timestamp: new Date('2026-11-11T11:00:00Z') },
+        { Id: 'chat-newest-2', Activity_Id: 'act-102', Content: 'Latest message for act 102', Timestamp: new Date('2026-11-11T12:30:00Z') },
+      ];
+
+      mockChatRepo.findAll = jest.fn().mockResolvedValue(mockChats);
+
+      const result = await service.getChatList(1, 10, 'waiting');
+
+      expect(result.success).toBe(true);
+      expect(result.data.length).toBe(2);
+
+      // Verify act-101 received only its latest message
+      expect(result.data[0].last_chat.Id).toBe('chat-newest-1');
+      expect(result.data[0].chats.length).toBe(1);
+      expect(result.data[0].chats[0].Id).toBe('chat-newest-1');
+
+      // Verify act-102 received only its latest message
+      expect(result.data[1].last_chat.Id).toBe('chat-newest-2');
+      expect(result.data[1].chats.length).toBe(1);
+      expect(result.data[1].chats[0].Id).toBe('chat-newest-2');
+
+      expect(result.pagination).toEqual({
+        page: 1,
+        limit: 10,
+        total: 2,
+      });
+    });
   });
 });

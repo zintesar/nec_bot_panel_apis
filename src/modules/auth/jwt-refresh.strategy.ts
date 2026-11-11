@@ -1,7 +1,8 @@
 import { ExtractJwt, Strategy } from 'passport-jwt';
 import { PassportStrategy } from '@nestjs/passport';
 import { Inject, Injectable, UnauthorizedException } from '@nestjs/common';
-import { REDIS_CONNECTION } from '@config/constants';
+import { USER_REPOSITORY } from '@config/constants';
+import { UserModel } from '@models/index';
 
 @Injectable()
 export class RefreshTokenStrategy extends PassportStrategy(
@@ -9,7 +10,7 @@ export class RefreshTokenStrategy extends PassportStrategy(
   'jwt-refresh',
 ) {
   constructor(
-    @Inject(REDIS_CONNECTION) private readonly redisClient: any,
+    @Inject(USER_REPOSITORY) private readonly userRepository: typeof UserModel,
   ) {
     super({
       jwtFromRequest: ExtractJwt.fromBodyField('refresh_token'),
@@ -19,11 +20,26 @@ export class RefreshTokenStrategy extends PassportStrategy(
   }
 
   async validate(payload: any) {
-    const redisKey = `app_auth:${payload.user_id}:refreshToken:${payload.jti}`;
-    const userData = await this.redisClient.get(redisKey);
-    if (!userData) {
-      throw new UnauthorizedException('Refresh session expired or revoked');
+    const userId = payload.user_id || payload.id;
+    const user = await (this.userRepository as any).findByPk(userId);
+    if (!user) {
+      throw new UnauthorizedException('User not found');
     }
-    return JSON.parse(userData);
+
+    const currentVersion = user.Token_Version ?? 1;
+    const tokenVersion = payload.token_version ?? 1;
+
+    if (currentVersion !== tokenVersion) {
+      throw new UnauthorizedException('Session expired or revoked');
+    }
+
+    const plainUser = user.get({ plain: true });
+    const { password: _pw, Password: _pw2, ...result } = plainUser;
+    return {
+      ...result,
+      id: userId,
+      user_id: userId,
+    };
   }
 }
+

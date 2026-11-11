@@ -1,13 +1,10 @@
 import { ExtractJwt, Strategy } from 'passport-jwt';
 import { PassportStrategy } from '@nestjs/passport';
-import { Inject, Injectable, UnauthorizedException } from '@nestjs/common';
-import { REDIS_CONNECTION } from '@config/constants';
+import { Injectable } from '@nestjs/common';
 
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
-  constructor(
-    @Inject(REDIS_CONNECTION) private readonly redisClient: any,
-  ) {
+  constructor() {
     super({
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
       ignoreExpiration: false,
@@ -16,11 +13,15 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
   }
 
   async validate(payload: any) {
-    const redisKey = `app_auth:${payload.user_id}:token:${payload.jti}`;
-    const userData = await this.redisClient.get(redisKey);
-    if (!userData) {
-      throw new UnauthorizedException('Session expired or revoked');
-    }
-    return JSON.parse(userData);
+    // Pure stateless verification: Passport validates the cryptographic signature & expiry.
+    return {
+      id: payload.user_id || payload.id,
+      user_id: payload.user_id || payload.id,
+      name: payload.name || payload.Name,
+      email: payload.email || payload.Email,
+      user_type: payload.user_type || payload.User_Type,
+      ...payload,
+    };
   }
 }
+

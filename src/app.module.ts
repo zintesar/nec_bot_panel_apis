@@ -14,16 +14,15 @@ import { KafkaModule } from './config/kafka/kafka.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { ApifetchModule } from './modules/apifetch/apifetch.module';
 import { UserModule } from './modules/user/user.module';
-import { RedisModule } from './config/redis/redis.module';
 import { UserTypeModule } from './modules/user-type/user-type.module';
 import { ChatActivityModule } from './modules/chat-activity/chat-activity.module';
 import { DashboardModule } from './modules/dashboard/dashboard.module';
+import { CustomerModule } from './modules/customer/customer.module';
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
     DatabaseModule,
-    RedisModule,
     KafkaModule,
     EmailSendModule,
     AuthModule,
@@ -32,6 +31,7 @@ import { DashboardModule } from './modules/dashboard/dashboard.module';
     UserTypeModule,
     ChatActivityModule,
     DashboardModule,
+    CustomerModule,
   ],
   controllers: [],
   providers: [...interceptorProviders],

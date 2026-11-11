@@ -51,26 +51,30 @@ async function bootstrap() {
   //SwaggerModule not use for production...
   if (process.env.NODE_ENV != 'production') {
     const config = new DocumentBuilder()
-      .setTitle('Auth example')
-      .setDescription('The auth API description')
+      .setTitle('NEC Bot API')
+      .setDescription('NEC Bot WhatsApp & Support Agent Management API')
       .setVersion('1.0')
-      .addTag('cats')
+      .addTag('Auth')
+      .addTag('Chat Activity')
+      .addTag('Customer')
+      .addTag('Agent')
+      .addTag('User')
+      .addTag('API Fetch')
+      .addTag('App')
       .addBearerAuth({
-        // I was also testing it without prefix 'Bearer ' before the JWT
-        description: `[just text field] Please enter token in following format: Bearer <JWT>`,
+        description: `Please enter token in format: Bearer <JWT>`,
         name: 'Authorization',
-        bearerFormat: 'Bearer', // I`ve tested not to use this field, but the result was the same
+        bearerFormat: 'Bearer',
         scheme: 'Bearer',
-        type: 'http', // I`ve attempted type: 'apiKey' too
+        type: 'http',
         in: 'Header',
       })
       .addBearerAuth({
-        // I was also testing it without prefix 'Bearer ' before the JWT
-        description: `[just text field] Please enter token in following format: Bearer <JWT>`,
+        description: `Please enter module token in format: Bearer <JWT>`,
         name: 'Module',
-        bearerFormat: 'Bearer', // I`ve tested not to use this field, but the result was the same
+        bearerFormat: 'Bearer',
         scheme: 'Bearer',
-        type: 'http', // I`ve attempted type: 'apiKey' too
+        type: 'http',
         in: 'Header',
       })
       .build();

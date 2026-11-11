@@ -3,7 +3,9 @@ import {
   Column,
   Model,
   DataType,
+  HasMany,
 } from 'sequelize-typescript';
+import { ChatActivityModel } from './chat-activity.model';
 
 @Table({
   tableName: 'Customer',
@@ -40,7 +42,15 @@ export class CustomerModel extends Model {
     field: 'Name',
   })
   Name: string;
+
+  @HasMany(() => ChatActivityModel, {
+    sourceKey: 'Id',
+    foreignKey: 'Customer_Id',
+    as: 'chatActivities',
+  })
+  chatActivities: ChatActivityModel[];
 }
 
 export { CustomerModel as Customer };
+
 

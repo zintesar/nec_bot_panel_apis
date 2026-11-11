@@ -1,27 +1,19 @@
 import {
   Controller,
-  HttpStatus,
   HttpCode,
   Get,
-  Query,
-  Post,
-  Body,
-  Res,
-  Put,
-  Param,
-  Delete,
-  Headers,
   Header,
 } from '@nestjs/common';
-import { Response } from 'express';
+import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
 import { AppService } from './app.service';
 
+@ApiTags('App')
 @Controller('hello')
 export class AppController {
-  constructor(private readonly appService: AppService) {
-    // super()
-  }
+  constructor(private readonly appService: AppService) {}
 
+  @ApiOperation({ summary: 'Service health check / hello endpoint' })
+  @ApiResponse({ status: 204, description: 'Service health check OK' })
   @Get()
   @HttpCode(204)
   @Header('Cache-Control', 'none')

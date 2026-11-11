@@ -8,7 +8,6 @@ import { JwtStrategy } from './jwt.strategy';
 import { RefreshTokenStrategy } from './jwt-refresh.strategy';
 import { JwtAuthGuard, JwtRefreshAuthGuard } from './guards';
 import { userProviders } from './user.providers';
-import { RedisModule } from '../../config/redis/redis.module';
 import { DatabaseModule } from '../../config/database/database.module';
 import { decrypt } from '@helpers/cipher';
 
@@ -25,7 +24,6 @@ const JWTKEY = IS_CRD_PLAIN
       signOptions: { expiresIn: process.env.TOKEN_EXPIRATION },
     }),
     DatabaseModule,
-    RedisModule,
   ],
   providers: [
     AuthService,

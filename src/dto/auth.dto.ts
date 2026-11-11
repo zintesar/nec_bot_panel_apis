@@ -1,10 +1,11 @@
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
   IsNotEmpty,
   MinLength,
   IsEmail,
   IsString,
   IsEnum,
+  IsOptional,
 } from 'class-validator';
 
 export enum UserType {
@@ -92,3 +93,24 @@ export class AssignAgentDto {
   @IsString()
   readonly agent_id: string;
 }
+
+export class BotLoginDto {
+  @ApiPropertyOptional({
+    description: 'Chatbot service username',
+    example: 'nec-engagement',
+    default: 'nec-engagement',
+  })
+  @IsOptional()
+  @IsString()
+  readonly username?: string;
+
+  @ApiPropertyOptional({
+    description: 'Chatbot service password',
+    example: '6sZzS0ICpguS0yvGlh1JwUCL',
+    default: '6sZzS0ICpguS0yvGlh1JwUCL',
+  })
+  @IsOptional()
+  @IsString()
+  readonly password?: string;
+}
+

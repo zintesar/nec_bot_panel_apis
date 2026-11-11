@@ -33,5 +33,13 @@ export class SendWhatsAppTextMessageDto {
   @IsOptional()
   @IsString()
   message?: string;
+
+  @ApiPropertyOptional({
+    description: 'Optional chat activity ID to associate with this message',
+    example: '2251d1da-b081-49c2-b17f-e4048442c93e',
+  })
+  @IsOptional()
+  @IsString()
+  chat_activity_id?: string;
 }
 

@@ -3,7 +3,9 @@ import {
   Column,
   Model,
   DataType,
+  HasMany,
 } from 'sequelize-typescript';
+import { ChatActivityModel } from './chat-activity.model';
 
 @Table({
   tableName: 'Users',
@@ -68,4 +70,20 @@ export class UserModel extends Model {
     field: 'User_Id',
   })
   User_Id: string;
+
+  @Column({
+    type: DataType.INTEGER,
+    defaultValue: 1,
+    allowNull: false,
+    field: 'Token_Version',
+  })
+  Token_Version: number;
+
+  @HasMany(() => ChatActivityModel, {
+    sourceKey: 'Id',
+    foreignKey: 'Agent_Id',
+    as: 'chatActivities',
+  })
+  chatActivities: ChatActivityModel[];
 }
+
