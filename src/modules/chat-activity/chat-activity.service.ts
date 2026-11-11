@@ -278,7 +278,7 @@ export class ChatActivityService {
             }
         } else {
             // Default: Show active queue (WAITING and AI ACTIVE)
-            statusFilter = [ChatActivityStatus.WAITING, ChatActivityStatus.AI_ACTIVE, ChatActivityStatus.HUMAN_ACTIVE];
+            statusFilter = [ChatActivityStatus.WAITING, ChatActivityStatus.AI_ACTIVE, ChatActivityStatus.HUMAN_ACTIVE,];
         }
 
         // Step 2: Normalize pagination bounds
