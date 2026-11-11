@@ -6,4 +6,5 @@ export * from './customer.dto';
 export * from './agent.dto';
 export * from './dashboard.dto';
 export * from './bot.dto';
+export * from './chat-activity.dto';
 

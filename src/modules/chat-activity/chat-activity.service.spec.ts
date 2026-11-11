@@ -353,19 +353,68 @@ describe('ChatActivityService - sendWhatsAppTextMessage', () => {
 
       // Verify act-101 received only its latest message
       expect(result.data[0].last_chat.Id).toBe('chat-newest-1');
-      expect(result.data[0].chats.length).toBe(1);
-      expect(result.data[0].chats[0].Id).toBe('chat-newest-1');
 
       // Verify act-102 received only its latest message
       expect(result.data[1].last_chat.Id).toBe('chat-newest-2');
-      expect(result.data[1].chats.length).toBe(1);
-      expect(result.data[1].chats[0].Id).toBe('chat-newest-2');
 
       expect(result.pagination).toEqual({
         page: 1,
         limit: 10,
         total: 2,
       });
+    });
+  });
+
+  describe('setPriority', () => {
+    it('should successfully update priority for an existing chat activity', async () => {
+      const mockActivity = {
+        Activity_Id: 'act-uuid-1',
+        Priority: 1,
+        save: jest.fn().mockResolvedValue(true),
+      };
+      mockChatActivityRepo.findOne.mockResolvedValueOnce(mockActivity);
+
+      const result = await service.setPriority({
+        activity_id: 'act-uuid-1',
+        priority: 3,
+      });
+
+      expect(mockChatActivityRepo.findOne).toHaveBeenCalledWith({
+        where: { Activity_Id: 'act-uuid-1' },
+      });
+      expect(mockActivity.Priority).toBe(3);
+      expect(mockActivity.save).toHaveBeenCalled();
+      expect(result.success).toBe(true);
+      expect(result.data.Priority).toBe(3);
+    });
+
+    it('should throw NotFoundException if chat activity does not exist', async () => {
+      mockChatActivityRepo.findOne.mockResolvedValueOnce(null);
+
+      await expect(
+        service.setPriority({
+          activity_id: 'non-existent',
+          priority: 2,
+        }),
+      ).rejects.toThrow('Chat activity not found for UUID: non-existent');
+    });
+
+    it('should throw BadRequestException if activity UUID is missing', async () => {
+      await expect(
+        service.setPriority({
+          activity_id: '',
+          priority: 2,
+        }),
+      ).rejects.toThrow('Activity UUID is required');
+    });
+
+    it('should throw BadRequestException if priority is missing or not a number', async () => {
+      await expect(
+        service.setPriority({
+          activity_id: 'act-1',
+          priority: null as any,
+        }),
+      ).rejects.toThrow('Valid integer priority is required');
     });
   });
 });

@@ -14,7 +14,6 @@ import {
 import {
     Injectable,
     Inject,
-    Optional,
     BadRequestException,
     NotFoundException,
     ForbiddenException,
@@ -24,6 +23,7 @@ import {
 import {
     AssignAgentDto,
     SendWhatsAppTextMessageDto,
+    SetPriorityDto,
 } from 'src/dto';
 import { randomUUID } from 'crypto';
 import axios from 'axios';
@@ -43,7 +43,7 @@ export class ChatActivityService {
         @Inject(CHAT_REPOSITORY) private readonly chatRepository: typeof ChatModel,
         @Inject(USER_REPOSITORY) private readonly userRepository: typeof UserModel,
         @Inject(CUSTOMER_REPOSITORY) private readonly customerRepository: typeof CustomerModel,
-        @Optional() private readonly chatBotService?: ChatBotService,
+        private readonly chatBotService: ChatBotService,
     ) { }
 
     /**
@@ -223,155 +223,25 @@ export class ChatActivityService {
     }
 
     /**
-     * Handles batch or individual webhook payloads by extracting all text messages
-     * and sequentially invoking processWhatsAppTextMessage for each.
-     *
-     * @param incomingMessage - Raw webhook payload from Meta
-     * @returns Single or array of message processing results
-     */
-    async handleIncomingMessage(incomingMessage: any): Promise<any> {
-        try {
-            // Step 1: Parse and extract inbound text messages from the webhook payload
-            const messages = iterTextMessages(incomingMessage);
-            if (!messages || messages.length === 0) {
-                winstonLog.info('Received WhatsApp webhook without text messages (e.g. delivery receipt, status, or non-text)');
-                return { status: 'ignored_or_no_text' };
-            }
-
-            // Step 2: Iterate through extracted messages and process each sequentially
-            const results = [];
-            for (const msg of messages) {
-                const res = await this.processWhatsAppTextMessage(msg);
-                results.push(res);
-            }
-
-            // Step 3: Return consolidated processing results
-            return results.length === 1 ? results[0] : results;
-        } catch (error) {
-            winstonLog.error(`error in processing message : ${error?.message || error}`);
-            throw new BadRequestException(error);
-        }
-    }
-
-    /**
-     * Processes an outgoing message payload, registers or locates the recipient user,
-     * links the chat activity, and stores the outbound chat record.
-     *
-     * @param outgoingMessage - Raw outgoing webhook / echo event structure
-     * @returns Created chat entry or failure payload
-     */
-    async handelOutgoingMessage(outgoingMessage: any): Promise<any> {
-        console.log("🚀 ~ ChatActivityService ~ handelOutgoingMessage ~ outgoingMessage:", JSON.stringify(outgoingMessage));
-
-        try {
-            // Step 1: Parse recipient information and message attributes
-            const customer_info = {
-                phone_number: outgoingMessage.entry[0].changes[0].value.metadata.display_phone_number,
-                name: outgoingMessage.entry[0].changes[0].value.contacts[0].profile.name,
-                wa_id: outgoingMessage.entry[0].changes[0].value.contacts[0].wa_id,
-            };
-
-            const message_info = {
-                message_id: outgoingMessage.entry[0].changes[0].value.messages[0].id,
-                message_type: outgoingMessage.entry[0].changes[0].value.messages[0].type,
-                message_timestamp: outgoingMessage.entry[0].changes[0].value.messages[0].timestamp,
-                message_text: outgoingMessage.entry[0].changes[0].value.messages[0].text.body,
-            };
-
-            const activity_id = randomUUID();
-
-            // Step 2: Retrieve existing user or create a new user profile
-            let customer = await this.userRepository.findOne({
-                where: {
-                    wa_id: customer_info.wa_id,
-                },
-            });
-
-            if (!customer) {
-                customer = await this.userRepository.create({
-                    Id: randomUUID(),
-                    Name: customer_info.name,
-                    WhatsApp_Id: customer_info.wa_id,
-                    Phone_Number: customer_info.phone_number,
-                });
-            }
-
-            const customer_id = customer.Id;
-
-            // Step 3: Find or initialize chat activity for user
-            let chat_activity = await this.chatActivityRepository.findOne({
-                where: {
-                    customer_id: customer_id,
-                },
-            });
-
-            if (!chat_activity) {
-                chat_activity = await this.chatActivityRepository.create({
-                    Id: activity_id,
-                    Customer_Id: customer_id,
-                    Status: "WAITING",
-                    Started_At: new Date(),
-                    Human_Takeover_At: null,
-                });
-            }
-
-            // Step 4: Record outbound message in Chats table
-            const chat_entry = {
-                Id: randomUUID(),
-                Activity_Id: activity_id,
-                From: customer_info.phone_number,
-                To: String(customer_info.wa_id),
-                Timestamp: new Date(parseInt(message_info.message_timestamp, 10) * 1000),
-                Type: message_info.message_type,
-                Content: message_info.message_text,
-                Message_Id: message_info.message_id,
-            };
-
-            const chat = await this.chatRepository.create(chat_entry);
-            console.log("chat", chat);
-            return chat;
-        } catch (error: any) {
-            return {
-                success: false,
-                message: 'Failed to process message',
-                error: error.message,
-            };
-        }
-    }
-
-    /**
      * Forwards a message payload to the external chatbot service:
-     * Delegates to injected ChatBotService or fallback instance.
+     * Delegates to injected ChatBotService.
      *
      * @param data - Payload containing { message, session_id, language }
      * @returns Bot response containing answer, confidence, and metadata
      */
     async callBotApi(data: any): Promise<any> {
-        // Step 1: Delegate to injected ChatBotService when available
-        if (this.chatBotService) {
-            return await this.chatBotService.callBotApi(data);
-        }
-
-        // Step 2: Fall back to direct instance
-        const fallbackService = new ChatBotService();
-        return await fallbackService.callBotApi(data);
+        return await this.chatBotService.callBotApi(data);
     }
 
     /**
      * Authenticates with external chatbot service to obtain and cache JWT bearer token.
+     * Delegates to injected ChatBotService.
      *
      * @param body - Optional credentials override { username, password }
      * @returns Token payload { token, token_type, expires_in }
      */
     async botLogin(body?: any): Promise<any> {
-        // Step 1: Delegate login to ChatBotService
-        if (this.chatBotService) {
-            return await this.chatBotService.botLogin(body);
-        }
-
-        // Step 2: Fall back to direct instance
-        const fallbackService = new ChatBotService();
-        return await fallbackService.botLogin(body);
+        return await this.chatBotService.botLogin(body);
     }
 
     /**
@@ -408,7 +278,7 @@ export class ChatActivityService {
             }
         } else {
             // Default: Show active queue (WAITING and AI ACTIVE)
-            statusFilter = [ChatActivityStatus.WAITING, ChatActivityStatus.AI_ACTIVE];
+            statusFilter = [ChatActivityStatus.WAITING, ChatActivityStatus.AI_ACTIVE, ChatActivityStatus.HUMAN_ACTIVE];
         }
 
         // Step 2: Normalize pagination bounds
@@ -915,5 +785,53 @@ export class ChatActivityService {
                 metaResponse,
             },
         };
+    }
+
+    /**
+     * Sets or updates the priority of a specific chat activity.
+     *
+     * @param dto - Object containing activity UUID (activity_id/chat_activity_id) and priority integer (1-4)
+     * @returns Updated chat activity data
+     */
+    async setPriority(dto: SetPriorityDto): Promise<any> {
+        const activityId = dto.activity_id || (dto as any).chat_activity_id || (dto as any).activity_uuid;
+
+        if (!activityId) {
+            throw new BadRequestException('Activity UUID is required');
+        }
+
+        const priority = Number(dto.priority);
+        if (dto.priority === undefined || dto.priority === null || isNaN(priority)) {
+            throw new BadRequestException('Valid integer priority is required');
+        }
+
+        try {
+            const chatActivity = await this.chatActivityRepository.findOne({
+                where: {
+                    Activity_Id: activityId,
+                },
+            });
+
+            if (!chatActivity) {
+                throw new NotFoundException(`Chat activity not found for UUID: ${activityId}`);
+            }
+
+            chatActivity.Priority = priority;
+            await chatActivity.save();
+
+            winstonLog.info(`Chat activity [${activityId}] priority updated to ${priority}`);
+
+            return {
+                success: true,
+                message: 'Priority updated successfully',
+                data: chatActivity,
+            };
+        } catch (error: any) {
+            if (error instanceof HttpException) {
+                throw error;
+            }
+            winstonLog.error(`Error setting chat priority: ${error?.message || error}`);
+            throw new BadRequestException(error?.message || 'Failed to update priority');
+        }
     }
 }

@@ -20,6 +20,7 @@ import {
     AssignAgentDto,
     BotLoginDto,
     SendWhatsAppTextMessageDto,
+    SetPriorityDto,
 } from '../../dto';
 import { JwtAuthGuard, skipModule } from '../../middleware/guards';
 import { ChatActivityService } from './chat-activity.service';
@@ -37,12 +38,13 @@ import {
     ApiUnassignChatDoc,
     ApiSendWhatsAppMessageDoc,
     ApiBotLoginDoc,
+    ApiSetPriorityDoc,
 } from './chat-activity.swagger';
 
 @ApiTags('Chat Activity')
 @Controller('chat-activity')
 export class ChatActivityController {
-    constructor(private readonly chatActivityService: ChatActivityService) {}
+    constructor(private readonly chatActivityService: ChatActivityService) { }
 
     private readonly verifyToken = 'qwer';
     private readonly seenMessages = new SeenMessageIds();
@@ -204,4 +206,18 @@ export class ChatActivityController {
     ): Promise<any> {
         return await this.chatActivityService.botLogin(body);
     }
+
+    /**
+     * POST /chat-activity/v1/set-priority
+     * Sets or updates the priority level for a given chat activity UUID.
+     */
+    @ApiSetPriorityDoc()
+    @UseGuards(skipModule)
+    @Post(['v1/set-priority', 'set-priority'])
+    async setPriority(
+        @Body() body: SetPriorityDto,
+    ): Promise<any> {
+        return await this.chatActivityService.setPriority(body);
+    }
+
 }

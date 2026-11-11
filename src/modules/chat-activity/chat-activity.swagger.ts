@@ -13,6 +13,7 @@ import {
     BotLoginDto,
     IncomingMessageDto,
     SendWhatsAppTextMessageDto,
+    SetPriorityDto,
 } from '../../dto';
 
 /**
@@ -222,6 +223,23 @@ export function ApiBotLoginDoc() {
         ApiBody({ type: BotLoginDto, required: false }),
         ApiResponse({ status: 200, description: 'Bot logged in successfully and token obtained' }),
         ApiResponse({ status: 400, description: 'Chatbot login failed or invalid credentials' }),
+    );
+}
+
+/**
+ * Swagger documentation decorator for POST v1/set-priority
+ */
+export function ApiSetPriorityDoc() {
+    return applyDecorators(
+        ApiOperation({
+            summary: 'Set priority for a chat activity',
+            description:
+                'Updates the priority level (1 = Low, 2 = Medium, 3 = High, 4 = Urgent) for a given chat activity UUID.',
+        }),
+        ApiBody({ type: SetPriorityDto }),
+        ApiResponse({ status: 200, description: 'Priority updated successfully' }),
+        ApiResponse({ status: 400, description: 'Bad Request: Missing or invalid parameters' }),
+        ApiResponse({ status: 404, description: 'Not Found: Chat activity not found' }),
     );
 }
 

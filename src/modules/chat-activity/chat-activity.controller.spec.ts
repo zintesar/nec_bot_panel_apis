@@ -14,6 +14,7 @@ describe('ChatActivityController', () => {
     sendWhatsAppTextMessage: jest.fn(),
     botLogin: jest.fn(),
     callBotApi: jest.fn(),
+    setPriority: jest.fn(),
   };
 
   beforeEach(async () => {
@@ -41,6 +42,16 @@ describe('ChatActivityController', () => {
     const result = await controller.botLogin({ username: 'user', password: 'pwd' });
     expect(result).toBe(mockTokenRes);
     expect(mockChatActivityService.botLogin).toHaveBeenCalledWith({ username: 'user', password: 'pwd' });
+  });
+
+  it('should delegate setPriority to ChatActivityService', async () => {
+    const mockRes = { success: true, message: 'Priority updated successfully' };
+    mockChatActivityService.setPriority.mockResolvedValueOnce(mockRes);
+
+    const dto = { activity_id: 'act-uuid-1', priority: 3 };
+    const result = await controller.setPriority(dto);
+    expect(result).toBe(mockRes);
+    expect(mockChatActivityService.setPriority).toHaveBeenCalledWith(dto);
   });
 });
 

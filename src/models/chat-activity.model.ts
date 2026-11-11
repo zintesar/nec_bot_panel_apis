@@ -17,6 +17,13 @@ export enum ChatActivityStatus {
   HUMAN_ACTIVE = 3,
 }
 
+export enum ChatActivityPriority {
+  LOW = 1,
+  MEDIUM = 2,
+  HIGH = 3,
+  URGENT = 4,
+}
+
 @Table({
   tableName: 'Chat_Activity',
   schema: 'dbo',
@@ -54,6 +61,15 @@ export class ChatActivityModel extends Model {
     field: 'Status',
   })
   Status: number;
+
+  @Column({
+    type: DataType.INTEGER,
+    defaultValue: 1,
+    allowNull: true,
+    comment: '1= Low, 2= Medium, 3= High, 4= Urgent',
+    field: 'Priority',
+  })
+  Priority: number;
 
   @Column({
     type: DataType.DATE,
