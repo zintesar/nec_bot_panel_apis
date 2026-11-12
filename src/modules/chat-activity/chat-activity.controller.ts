@@ -186,12 +186,14 @@ export class ChatActivityController {
      * Sends an outbound text message to a customer via WhatsApp Cloud API.
      */
     @ApiSendWhatsAppMessageDoc()
-    @UseGuards(skipModule)
+    // @UseGuards(skipModule)
+    @UseGuards(JwtAuthGuard)
     @Post(['v1/send-message', 'send-message'])
     async sendWhatsAppMessage(
         @Body() sendDto: SendWhatsAppTextMessageDto,
+        @Request() req: any,
     ): Promise<any> {
-        return await this.chatActivityService.sendWhatsAppTextMessage(sendDto);
+        return await this.chatActivityService.sendWhatsAppTextMessage(sendDto, req.user);
     }
 
     /**

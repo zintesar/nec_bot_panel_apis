@@ -34,6 +34,7 @@ export interface BotMessageResponse {
     decision_source?: string;
     detected_language?: string | null;
     whatsapp_url?: string | null;
+    human_support?: boolean | null;
     [key: string]: any;
 }
 

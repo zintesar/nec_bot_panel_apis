@@ -108,7 +108,9 @@ export class ChatActivityService {
             }
 
             const customerId = customer.Id;
-            const newActivityId = randomUUID();
+            // const newActivityId = randomUUID();
+            const newActivityId = customerId
+
 
             // -------------------------------------------------------------------------
             // STEP 3: Find or initialize active conversation session (ChatActivity)
@@ -200,10 +202,17 @@ export class ChatActivityService {
                         whatsapp_number: customerPhone,
                         text: botAnswer,
                         chat_activity_id: chatActivity.Activity_Id || newActivityId,
+                    }, {
+                        user_type: 'bot',
+                        id: 'bot',
+                        user_id: 'bot',
                     });
                 } catch (sendErr: any) {
                     winstonLog.error(`Error sending bot answer to WhatsApp recipient ${customerPhone}: ${sendErr?.message || sendErr}`);
                 }
+
+                // if bot anwswer contain human flag true set chat activity status to 3 and email agents instead of sending whats app message
+
             } else {
                 winstonLog.warn(`ChatBot API did not return an answer for session [${botPayload.session_id}]`);
             }
@@ -593,20 +602,57 @@ export class ChatActivityService {
     }
 
     /**
-     * Sends an outbound WhatsApp text message via Meta Cloud API:
-     * 1. Resolves recipient from UserModel or CustomerModel by phone number / WhatsApp ID.
-     * 2. Formats payload and posts to Meta Graph API endpoint.
-     * 3. Persists sent message into the Chats repository and links to active ChatActivity.
+     * Sends an outbound WhatsApp text message:
+     * 1. Validates target chat activity and enforces role-based access control (Admin, Bot, Agent).
+     * 2. Validates recipient phone/WhatsApp number and message text body.
+     * 3. Resolves recipient profile from UserModel or CustomerModel by phone number / WhatsApp ID.
+     * 4. Prepares API credentials and persists the message entry to the Chats table linked to ChatActivity.
      *
      * @param dto - Outbound WhatsApp message parameters { whatsapp_number, text, chat_activity_id }
-     * @returns Delivery confirmation with Meta message ID and recipient info
+     * @param currentUser - Current authenticated user context
+     * @returns Delivery confirmation with message ID and recipient info
      */
-    async sendWhatsAppTextMessage(dto: SendWhatsAppTextMessageDto): Promise<any> {
-        const targetNumber = String(dto?.whatsapp_number || dto?.phone_number || '').trim();
-        const textBody = String(dto?.text || dto?.message || '').trim();
+    async sendWhatsAppTextMessage(dto: SendWhatsAppTextMessageDto, currentUser?: any): Promise<any> {
+        const targetNumber = String(dto?.whatsapp_number || '').trim();
+        const textBody = String(dto?.text || '').trim();
+        const userRole = (currentUser?.User_Type || currentUser?.user_type || '').toLowerCase();
+        const currentUserId = currentUser?.id || currentUser?.Id || currentUser?.user_id;
 
         // -------------------------------------------------------------------------
-        // STEP 1: Validate required parameters (recipient number and message text)
+        // STEP 1: Validate chat activity existence and enforce access control (RBAC)
+        // -------------------------------------------------------------------------
+        const chatActivity = await this.chatActivityRepository.findOne({
+            where: {
+                Activity_Id: dto.chat_activity_id,
+            },
+        });
+
+        if (!chatActivity) {
+            throw new BadRequestException('Chat activity not found');
+        }
+
+        // Admin role has unrestricted permission to send messages
+        if (userRole === 'admin') {
+        }
+
+        // Bot system has automated permission to send responses
+        if (userRole === 'bot') {
+        }
+
+        // Agent role can only send messages to chats assigned to them in active status (3)
+        if (userRole === 'agent') {
+            const isAssignedToAgent = chatActivity.Agent_Id === currentUserId;
+            const isStatusAgentActive = Number(chatActivity.Status) === 3;
+
+            if (!isAssignedToAgent || !isStatusAgentActive) {
+                throw new ForbiddenException(
+                    'Access denied: You are not assigned to this chat or the chat is not active',
+                );
+            }
+        }
+
+        // -------------------------------------------------------------------------
+        // STEP 2: Validate required parameters (recipient number and message text)
         // -------------------------------------------------------------------------
         if (!targetNumber) {
             throw new BadRequestException('Recipient whatsapp_number is required');
@@ -617,7 +663,7 @@ export class ChatActivityService {
         }
 
         // -------------------------------------------------------------------------
-        // STEP 2: Resolve recipient profile from UserModel or CustomerModel
+        // STEP 3: Resolve recipient profile from UserModel or CustomerModel
         // -------------------------------------------------------------------------
         const cleanNumber = targetNumber.replace(/\D/g, '');
         const waIdNum = parseInt(cleanNumber, 10);
@@ -657,7 +703,7 @@ export class ChatActivityService {
         }
 
         // -------------------------------------------------------------------------
-        // STEP 3: Extract valid WhatsApp recipient ID
+        // STEP 4: Extract valid WhatsApp recipient ID
         // -------------------------------------------------------------------------
         const whatsAppId = recipient.WhatsApp_Id ? String(recipient.WhatsApp_Id) : cleanNumber;
         if (!whatsAppId) {
@@ -665,15 +711,15 @@ export class ChatActivityService {
         }
 
         // -------------------------------------------------------------------------
-        // STEP 4: Validate Meta WhatsApp Cloud API credentials from environment
+        // STEP 5: Validate Meta WhatsApp Cloud API credentials from environment
         // -------------------------------------------------------------------------
         const phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID || '';
         const accessToken = process.env.WHATSAPP_ACCESS_TOKEN || process.env.WHATSAPP_TOKEN || '';
         const apiVersion = process.env.WHATSAPP_API_VERSION || 'v21.0';
 
-        if (!accessToken) {
-            throw new BadRequestException('WHATSAPP_ACCESS_TOKEN is not configured in environment variables');
-        }
+        // if (!accessToken) {
+        //     throw new BadRequestException('WHATSAPP_ACCESS_TOKEN is not configured in environment variables');
+        // }
 
         if (!phoneNumberId) {
             throw new BadRequestException('WHATSAPP_PHONE_NUMBER_ID is not configured in environment variables');
@@ -682,41 +728,42 @@ export class ChatActivityService {
         const url = process.env.WHATSAPP_API_URL || `https://graph.facebook.com/${apiVersion}/${phoneNumberId}/messages`;
 
         // -------------------------------------------------------------------------
-        // STEP 5: Dispatch message to Meta WhatsApp Cloud API
+        // STEP 6: Dispatch message to Meta WhatsApp Cloud API (currently bypassed)
         // -------------------------------------------------------------------------
-        const requestBody = {
-            messaging_product: 'whatsapp',
-            recipient_type: 'individual',
-            to: whatsAppId,
-            type: 'text',
-            text: {
-                preview_url: false,
-                body: textBody,
-            },
-        };
+        // const requestBody = {
+        //     messaging_product: 'whatsapp',
+        //     recipient_type: 'individual',
+        //     to: whatsAppId,
+        //     type: 'text',
+        //     text: {
+        //         preview_url: false,
+        //         body: textBody,
+        //     },
+        // };
 
-        winstonLog.info(`Sending WhatsApp text message to ${whatsAppId} (user: ${recipient.Id}) via ${url}`);
+        // winstonLog.info(`Sending WhatsApp text message to ${whatsAppId} (user: ${recipient.Id}) via ${url}`);
 
-        let metaResponse: any;
-        try {
-            const apiRes = await axios.post(url, requestBody, {
-                headers: {
-                    'Content-Type': 'application/json',
-                    Authorization: `Bearer ${accessToken}`,
-                },
-            });
-            metaResponse = apiRes.data;
-        } catch (error: any) {
-            const errorDetails = error.response?.data || error.message;
-            winstonLog.error(`Error sending WhatsApp message: ${JSON.stringify(errorDetails)}`);
-            const errorMessage = error.response?.data?.error?.message || error.message || 'Failed to send WhatsApp message via Meta API';
-            throw new BadRequestException(errorMessage);
-        }
+        // let metaResponse: any;
+        // try {
+        //     const apiRes = await axios.post(url, requestBody, {
+        //         headers: {
+        //             'Content-Type': 'application/json',
+        //             Authorization: `Bearer ${accessToken}`,
+        //         },
+        //     });
+        //     metaResponse = apiRes.data;
+        // } catch (error: any) {
+        //     const errorDetails = error.response?.data || error.message;
+        //     winstonLog.error(`Error sending WhatsApp message: ${JSON.stringify(errorDetails)}`);
+        //     const errorMessage = error.response?.data?.error?.message || error.message || 'Failed to send WhatsApp message via Meta API';
+        //     throw new BadRequestException(errorMessage);
+        // }
 
-        const sentMessageId = metaResponse?.messages?.[0]?.id || randomUUID();
+        // Generate unique message identifier for the outbound message
+        const sentMessageId = randomUUID();
 
         // -------------------------------------------------------------------------
-        // STEP 6: Persist outbound message in Chats table and link to ChatActivity
+        // STEP 7: Persist outbound message in Chats table and link to ChatActivity
         // -------------------------------------------------------------------------
         try {
             let chatActivity: any = null;
@@ -769,7 +816,7 @@ export class ChatActivityService {
         }
 
         // -------------------------------------------------------------------------
-        // STEP 7: Return delivery confirmation with Meta message ID
+        // STEP 8: Return delivery confirmation with Meta message ID
         // -------------------------------------------------------------------------
         return {
             success: true,
@@ -782,7 +829,7 @@ export class ChatActivityService {
                     whatsAppId: whatsAppId,
                     phoneNumber: recipient.Phone_Number,
                 },
-                metaResponse,
+                // metaResponse,
             },
         };
     }
