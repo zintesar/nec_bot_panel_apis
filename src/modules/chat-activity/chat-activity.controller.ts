@@ -21,6 +21,7 @@ import {
     BotLoginDto,
     SendWhatsAppTextMessageDto,
     SetPriorityDto,
+    UnAssignAgentDto,
 } from '../../dto';
 import { JwtAuthGuard, skipModule } from '../../middleware/guards';
 import { ChatActivityService } from './chat-activity.service';
@@ -175,7 +176,7 @@ export class ChatActivityController {
     @UseGuards(JwtAuthGuard)
     @Post('v1/unassign-chat')
     async unassignChat(
-        @Body() body: AssignAgentDto,
+        @Body() body: UnAssignAgentDto,
         @Request() req: any,
     ): Promise<any> {
         return await this.chatActivityService.unassignAgent(body, req.user);

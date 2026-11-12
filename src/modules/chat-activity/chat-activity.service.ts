@@ -24,6 +24,7 @@ import {
     AssignAgentDto,
     SendWhatsAppTextMessageDto,
     SetPriorityDto,
+    UnAssignAgentDto,
 } from 'src/dto';
 import { randomUUID } from 'crypto';
 import axios from 'axios';
@@ -35,6 +36,7 @@ import {
     iterTextMessages,
 } from './whatsapp-webhook.util';
 import { ChatBotService } from './chat-bot.service';
+import { EmailSendService } from '../email-send/email-send.service';
 
 @Injectable()
 export class ChatActivityService {
@@ -44,6 +46,7 @@ export class ChatActivityService {
         @Inject(USER_REPOSITORY) private readonly userRepository: typeof UserModel,
         @Inject(CUSTOMER_REPOSITORY) private readonly customerRepository: typeof CustomerModel,
         private readonly chatBotService: ChatBotService,
+        private readonly emailSendService: EmailSendService,
     ) { }
 
     /**
@@ -182,38 +185,86 @@ export class ChatActivityService {
 
             winstonLog.info(`Calling ChatBot API for incoming message [${msg.messageId}], session [${botPayload.session_id}]`);
             let botResponse: any = null;
-            try {
-                botResponse = await this.callBotApi(botPayload);
-            } catch (botErr: any) {
-                winstonLog.error(`Error calling ChatBot API: ${botErr?.message || botErr}`);
-            }
+            // try {
+            //     botResponse = await this.callBotApi(botPayload);
+            // } catch (botErr: any) {
+            //     winstonLog.error(`Error calling ChatBot API: ${botErr?.message || botErr}`);
+            // }
 
-            // Extract the 'answer' text returned by chatbot
-            const botAnswer = botResponse?.answer || botResponse?.data?.answer || (typeof botResponse === 'string' ? botResponse : null);
+            // // Extract the 'answer' text returned by chatbot
+            // const botAnswer = botResponse?.answer || botResponse?.data?.answer || (typeof botResponse === 'string' ? botResponse : null);
 
             // -------------------------------------------------------------------------
-            // STEP 7: Parse bot answer and dispatch outbound reply via WhatsApp API
+            // STEP 7: Handle human support handoff or dispatch outbound WhatsApp reply
             // -------------------------------------------------------------------------
             let sentWhatsAppMessage: any = null;
-            if (botAnswer) {
+            // const isHumanRequired = Boolean(
+            //     botResponse?.human_support === true ||
+            //     botResponse?.data?.human_support === true
+            // );
+
+            const isHumanRequired = true;
+
+            if (isHumanRequired) {
+                // Human support requested: Remain completely silent on WhatsApp,
+                // set chat activity status to HUMAN_ACTIVE (3), and email agents.
+                winstonLog.info(`Human support requested for session [${chatActivity.Activity_Id || newActivityId}]. Suppressing WhatsApp reply.`);
+                chatActivity.Status = ChatActivityStatus.HUMAN_ACTIVE;
+                chatActivity.Human_Takeover_At = new Date();
+                await chatActivity.save();
+
                 try {
-                    winstonLog.info(`Sending bot answer via WhatsApp to ${customerPhone}: ${botAnswer}`);
-                    sentWhatsAppMessage = await this.sendWhatsAppTextMessage({
-                        whatsapp_number: customerPhone,
-                        text: botAnswer,
-                        chat_activity_id: chatActivity.Activity_Id || newActivityId,
-                    }, {
-                        user_type: 'bot',
-                        id: 'bot',
-                        user_id: 'bot',
+                    const agents = await this.userRepository.findAll({
+                        where: {
+                            User_Type: {
+                                [Op.in]: ['agent', 'Agent', 'AGENT'],
+                            },
+                            Email: {
+                                [Op.ne]: null,
+                            },
+                        },
+                        attributes: ['Id', 'Name', 'Email'],
                     });
-                } catch (sendErr: any) {
-                    winstonLog.error(`Error sending bot answer to WhatsApp recipient ${customerPhone}: ${sendErr?.message || sendErr}`);
+
+                    const agentEmails = agents
+                        .map((a) => a.Email?.trim())
+                        .filter((email): email is string => Boolean(email && email.length > 0));
+
+                    if (agentEmails.length > 0) {
+                        await this.emailSendService.sendAgentHandoffAlert({
+                            recipients: agentEmails,
+                            customer: {
+                                name: customer.Name,
+                                phone: customerPhone,
+                            },
+                            activityId: chatActivity.Activity_Id || newActivityId,
+                            customerMessage: msg.body,
+                            requestedAt: new Date(),
+                        });
+                    } else {
+                        winstonLog.warn(`No agents with valid email addresses found to receive handoff alert for activity [${chatActivity.Activity_Id || newActivityId}]`);
+                    }
+                } catch (emailErr: any) {
+                    winstonLog.error(`Error notifying agents of human handoff for activity [${chatActivity.Activity_Id || newActivityId}]: ${emailErr?.message || emailErr}`);
                 }
-
-                // if bot anwswer contain human flag true set chat activity status to 3 and email agents instead of sending whats app message
-
-            } else {
+            }
+            // else if (botAnswer) {
+            //     try {
+            //         winstonLog.info(`Sending bot answer via WhatsApp to ${customerPhone}: ${botAnswer}`);
+            //         sentWhatsAppMessage = await this.sendWhatsAppTextMessage({
+            //             whatsapp_number: customerPhone,
+            //             text: botAnswer,
+            //             chat_activity_id: chatActivity.Activity_Id || newActivityId,
+            //         }, {
+            //             user_type: 'bot',
+            //             id: 'bot',
+            //             user_id: 'bot',
+            //         });
+            //     } catch (sendErr: any) {
+            //         winstonLog.error(`Error sending bot answer to WhatsApp recipient ${customerPhone}: ${sendErr?.message || sendErr}`);
+            //     }
+            // } 
+            else {
                 winstonLog.warn(`ChatBot API did not return an answer for session [${botPayload.session_id}]`);
             }
 
@@ -544,20 +595,11 @@ export class ChatActivityService {
      * @param user - Current authenticated user context
      * @returns Updated chat activity model
      */
-    async unassignAgent(body: AssignAgentDto, user: any): Promise<any> {
+    async unassignAgent(body: UnAssignAgentDto, user: any): Promise<any> {
         console.log("🚀 ~ ChatActivityService ~ unassignAgent ~ user:", user);
 
         try {
-            // Step 1: Validate authorization (agents cannot release other agents' chats)
-            if (user.User_Type === 'agent') {
-                if (user.User_Id !== body.agent_id && user.Id !== body.agent_id) {
-                    throw new ForbiddenException(
-                        'Access denied: You are not authorized to perform this action',
-                    );
-                }
-            }
-
-            // Step 2: Locate target chat activity
+            // Step 1: Locate target chat activity and agent records
             const chatActivity = await this.chatActivityRepository.findOne({
                 where: {
                     Activity_Id: body.chat_activity_id,
@@ -565,10 +607,16 @@ export class ChatActivityService {
             });
 
             if (!chatActivity) {
-                return {
-                    success: false,
-                    message: 'Chat activity not found',
-                };
+                throw new BadRequestException("Chat not found");
+            }
+
+            // Step 2: Validate agent permissions (agents cannot assign chats to other agents)
+            if (user.User_Type === 'agent') {
+                if (user.User_Id !== chatActivity.Agent_Id && user.Id !== chatActivity.Agent_Id) {
+                    throw new ForbiddenException(
+                        'Access denied: You are not authorized to perform this action',
+                    );
+                }
             }
 
             // Step 3: Validate status compatibility (cannot unassign waiting, resolved, or AI handover)

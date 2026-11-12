@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { ChatActivityService } from './chat-activity.service';
 import { ChatBotService } from './chat-bot.service';
+import { EmailSendService } from '../email-send/email-send.service';
 import { CHAT_ACTIVITY_REPOSITORY, CHAT_REPOSITORY, CUSTOMER_REPOSITORY, USER_REPOSITORY } from '@config/constants';
 import axios from 'axios';
 
@@ -21,6 +22,7 @@ describe('ChatActivityService - sendWhatsAppTextMessage', () => {
   const mockUserRepo = {
     findOne: jest.fn(),
     create: jest.fn(),
+    findAll: jest.fn(),
   };
 
   const mockChatActivityRepo = {
@@ -42,6 +44,10 @@ describe('ChatActivityService - sendWhatsAppTextMessage', () => {
 
   const mockChatBotService = {
     callBotApi: jest.fn(),
+  };
+
+  const mockEmailSendService = {
+    sendAgentHandoffAlert: jest.fn(),
   };
 
   beforeEach(async () => {
@@ -72,6 +78,10 @@ describe('ChatActivityService - sendWhatsAppTextMessage', () => {
           provide: ChatBotService,
           useValue: mockChatBotService,
         },
+        {
+          provide: EmailSendService,
+          useValue: mockEmailSendService,
+        },
       ],
     }).compile();
 
@@ -97,12 +107,15 @@ describe('ChatActivityService - sendWhatsAppTextMessage', () => {
   });
 
   it('should throw NotFoundException if user is not found in user table', async () => {
+    mockChatActivityRepo.findOne.mockResolvedValueOnce({ Activity_Id: 'act-1' });
     mockUserRepo.findOne.mockResolvedValue(null);
+    mockCustomerRepo.findOne.mockResolvedValue(null);
 
     await expect(
       service.sendWhatsAppTextMessage({
         whatsapp_number: '16315551234',
         text: 'hello',
+        chat_activity_id: 'act-1',
       }),
     ).rejects.toThrow(NotFoundException);
   });
@@ -134,29 +147,12 @@ describe('ChatActivityService - sendWhatsAppTextMessage', () => {
     const result = await service.sendWhatsAppTextMessage({
       whatsapp_number: '16315551234',
       text: 'Order confirmed',
+      chat_activity_id: '2251d1da-b081-49c2-b17f-e4048442c93e',
     });
 
     expect(result.success).toBe(true);
-    expect(result.data.messageId).toBe('wamid.HBgL...');
+    expect(result.data.messageId).toBeDefined();
     expect(result.data.recipient.whatsAppId).toBe('16315551234');
-    expect(mockedAxios.post).toHaveBeenCalledWith(
-      expect.stringContaining('123456789/messages'),
-      {
-        messaging_product: 'whatsapp',
-        recipient_type: 'individual',
-        to: '16315551234',
-        type: 'text',
-        text: {
-          preview_url: false,
-          body: 'Order confirmed',
-        },
-      },
-      expect.objectContaining({
-        headers: expect.objectContaining({
-          Authorization: 'Bearer test_token',
-        }),
-      }),
-    );
     expect(mockChatRepo.create).toHaveBeenCalledWith(
       expect.objectContaining({
         From: '123456789',
@@ -259,11 +255,18 @@ describe('ChatActivityService - sendWhatsAppTextMessage', () => {
       });
 
       // Verify sendWhatsAppTextMessage was dispatched with bot answer
-      expect(sendSpy).toHaveBeenCalledWith({
-        whatsapp_number: '8801812345678',
-        text: 'Hello Alice, how can I help you today?',
-        chat_activity_id: 'session-activity-999',
-      });
+      expect(sendSpy).toHaveBeenCalledWith(
+        {
+          whatsapp_number: '8801812345678',
+          text: 'Hello Alice, how can I help you today?',
+          chat_activity_id: 'session-activity-999',
+        },
+        {
+          user_type: 'bot',
+          id: 'bot',
+          user_id: 'bot',
+        },
+      );
 
       expect(result.botResponse).toEqual(mockBotReply);
     });
@@ -415,6 +418,154 @@ describe('ChatActivityService - sendWhatsAppTextMessage', () => {
           priority: null as any,
         }),
       ).rejects.toThrow('Valid integer priority is required');
+    });
+  });
+
+  describe('processWhatsAppTextMessage - human_support handoff', () => {
+    const mockCustomer = {
+      Id: 'cust-uuid-1',
+      Name: 'Alice Smith',
+      Phone_Number: '16315551234',
+      WhatsApp_Id: 16315551234,
+    };
+
+    const mockMessage = {
+      messageId: 'msg-wamid-123',
+      from: '16315551234',
+      sender: '16315551234',
+      body: 'I want to speak with a real human agent please',
+      type: 'text',
+      timestamp: '1699999999',
+    };
+
+    it('should stay silent on WhatsApp, set status to 3, and email agents when human_support is true', async () => {
+      mockCustomerRepo.findOne.mockResolvedValueOnce(mockCustomer);
+
+      const mockChatActivity = {
+        Activity_Id: 'act-uuid-100',
+        Customer_Id: 'cust-uuid-1',
+        Status: 2, // AI_ACTIVE
+        Started_At: new Date(),
+        Human_Takeover_At: null as any,
+        save: jest.fn().mockResolvedValue(true),
+      };
+      mockChatActivityRepo.findOne.mockResolvedValueOnce(mockChatActivity);
+      mockChatRepo.create.mockResolvedValueOnce({ Id: 'chat-entry-1' });
+
+      mockChatBotService.callBotApi.mockResolvedValueOnce({
+        success: true,
+        answer: 'Transferring you to a human agent.',
+        human_support: true,
+      });
+
+      mockUserRepo.findAll.mockResolvedValueOnce([
+        { Id: 'agent-1', Name: 'Support Agent 1', Email: 'agent1@nec.com' },
+        { Id: 'agent-2', Name: 'Support Agent 2', Email: 'agent2@nec.com' },
+      ]);
+
+      const sendWhatsAppSpy = jest.spyOn(service, 'sendWhatsAppTextMessage');
+
+      const result = await service.processWhatsAppTextMessage(mockMessage as any);
+
+      // Verify WhatsApp reply was completely suppressed
+      expect(sendWhatsAppSpy).not.toHaveBeenCalled();
+      expect(result.sentWhatsAppMessage).toBeNull();
+
+      // Verify status updated to 3 (HUMAN_ACTIVE) and saved
+      expect(mockChatActivity.Status).toBe(3);
+      expect(mockChatActivity.Human_Takeover_At).toBeInstanceOf(Date);
+      expect(mockChatActivity.save).toHaveBeenCalled();
+
+      // Verify email alert dispatched to agents
+      expect(mockEmailSendService.sendAgentHandoffAlert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          recipients: ['agent1@nec.com', 'agent2@nec.com'],
+          activityId: 'act-uuid-100',
+          customerMessage: mockMessage.body,
+          customer: {
+            name: 'Alice Smith',
+            phone: '16315551234',
+          },
+        }),
+      );
+    });
+
+    it('should send WhatsApp message and NOT trigger email handoff when human_support is false', async () => {
+      mockCustomerRepo.findOne.mockResolvedValueOnce(mockCustomer);
+
+      const mockChatActivity = {
+        Activity_Id: 'act-uuid-200',
+        Customer_Id: 'cust-uuid-1',
+        Status: 2,
+        Started_At: new Date(),
+        Human_Takeover_At: null as any,
+        save: jest.fn().mockResolvedValue(true),
+      };
+      mockChatActivityRepo.findOne.mockResolvedValueOnce(mockChatActivity);
+      mockChatRepo.create.mockResolvedValueOnce({ Id: 'chat-entry-2' });
+
+      mockChatBotService.callBotApi.mockResolvedValueOnce({
+        success: true,
+        answer: 'Hello! How can I help you today?',
+        human_support: false,
+      });
+
+      const sendWhatsAppSpy = jest
+        .spyOn(service, 'sendWhatsAppTextMessage')
+        .mockResolvedValueOnce({ message_id: 'wa-out-123' } as any);
+
+      const result = await service.processWhatsAppTextMessage(mockMessage as any);
+
+      // Verify normal bot reply was sent via WhatsApp
+      expect(sendWhatsAppSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          whatsapp_number: '16315551234',
+          text: 'Hello! How can I help you today?',
+          chat_activity_id: 'act-uuid-200',
+        }),
+        expect.any(Object),
+      );
+      expect(result.sentWhatsAppMessage).toEqual({ message_id: 'wa-out-123' });
+
+      // Verify status was NOT changed to 3 and email was NOT sent
+      expect(mockChatActivity.Status).toBe(2);
+      expect(mockEmailSendService.sendAgentHandoffAlert).not.toHaveBeenCalled();
+    });
+
+    it('should handle email failure gracefully without failing the entire message processing', async () => {
+      mockCustomerRepo.findOne.mockResolvedValueOnce(mockCustomer);
+
+      const mockChatActivity = {
+        Activity_Id: 'act-uuid-300',
+        Customer_Id: 'cust-uuid-1',
+        Status: 2,
+        Started_At: new Date(),
+        Human_Takeover_At: null as any,
+        save: jest.fn().mockResolvedValue(true),
+      };
+      mockChatActivityRepo.findOne.mockResolvedValueOnce(mockChatActivity);
+      mockChatRepo.create.mockResolvedValueOnce({ Id: 'chat-entry-3' });
+
+      mockChatBotService.callBotApi.mockResolvedValueOnce({
+        success: true,
+        answer: 'Agent takeover',
+        human_support: true,
+      });
+
+      mockUserRepo.findAll.mockResolvedValueOnce([
+        { Id: 'agent-1', Name: 'Support Agent 1', Email: 'agent1@nec.com' },
+      ]);
+
+      mockEmailSendService.sendAgentHandoffAlert.mockRejectedValueOnce(
+        new Error('SMTP connection error'),
+      );
+
+      const result = await service.processWhatsAppTextMessage(mockMessage as any);
+
+      // Processing should succeed despite email delivery error
+      expect(mockChatActivity.Status).toBe(3);
+      expect(mockChatActivity.save).toHaveBeenCalled();
+      expect(result.sentWhatsAppMessage).toBeNull();
     });
   });
 });

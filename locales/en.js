@@ -18,5 +18,7 @@
 	"username should not be empty": "Username should not be empty",
 	"password should not be empty": "password should not be empty",
 	"email must be an email": "email must be an email",
-	"password must be longer than or equal to 6 characters": "password must be longer than or equal to 6 characters"
+	"password must be longer than or equal to 6 characters": "password must be longer than or equal to 6 characters",
+	"agent_id must be a string": "agent_id must be a string",
+	"agent_id should not be empty": "agent_id should not be empty"
 }
